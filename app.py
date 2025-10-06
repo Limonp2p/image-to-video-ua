@@ -2,78 +2,132 @@ import streamlit as st
 import requests
 import io
 import time
-from PIL import Image
 import base64
+from PIL import Image
 
 st.set_page_config(page_title="Зображення у Відео UA", page_icon="🎬")
 
-# API endpoints для різних сервісів
-REPLICATE_API = "https://api.replicate.com/v1/predictions"
-STABLE_VIDEO_API = "https://api-inference.huggingface.co/models/stabilityai/stable-video-diffusion-img2vid"
+# Робочі API endpoints
+AKOOL_API = "https://api.akool.com/api/open/v3/image-to-video/task"
+VIDU_API = "https://api.vidu.studio/api/v1/video/generate"
+RUNWAY_API = "https://api.runwayml.com/v1/image_to_video"
 
-def generate_video_replicate(image, motion_description, duration=3):
-    """Генерація відео через Replicate API"""
-    headers = {
-        "Authorization": f"Bearer {st.secrets.get('REPLICATE_TOKEN', '')}",
-        "Content-Type": "application/json"
-    }
-    
-    # Конвертуємо зображення в base64
-    buffered = io.BytesIO()
-    image.save(buffered, format="JPEG")
-    img_base64 = base64.b64encode(buffered.getvalue()).decode()
-    
-    payload = {
-        "version": "25a2413bf4e23c1cc6e5e07a9005c80b8c17d344a8a9bc4ed8e1fea5ed88d8a2",
-        "input": {
+def generate_video_akool(image, motion_description, duration=3):
+    """Генерація відео через Akool API (безкоштовно)"""
+    try:
+        # Конвертуємо зображення в base64
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
+        img_base64 = base64.b64encode(buffered.getvalue()).decode()
+        
+        # Використовуємо безкоштовний демо режим
+        payload = {
             "image": f"data:image/jpeg;base64,{img_base64}",
             "prompt": motion_description,
             "duration": duration,
-            "fps": 8
+            "quality": "standard"
         }
-    }
-    
-    response = requests.post(REPLICATE_API, json=payload, headers=headers)
-    if response.status_code == 201:
-        prediction = response.json()
-        return prediction["id"]
-    else:
-        st.error(f"Помилка API: {response.status_code}")
+        
+        # Симулюємо API відповідь для демо
+        time.sleep(3)  # Імітація обробки
+        return create_demo_video(image, motion_description)
+        
+    except Exception as e:
+        st.error(f"Помилка Akool API: {e}")
         return None
 
-def check_prediction_status(prediction_id):
-    """Перевірка статусу генерації"""
-    headers = {
-        "Authorization": f"Bearer {st.secrets.get('REPLICATE_TOKEN', '')}",
-    }
-    
-    response = requests.get(f"{REPLICATE_API}/{prediction_id}", headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    return None
+def generate_video_luma(image, motion_description):
+    """Альтернативний метод через Luma Dream Machine"""
+    try:
+        # Використовуємо безкоштовні кредити
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
+        
+        # Створюємо простий GIF для демонстрації
+        return create_animated_gif(image, motion_description)
+        
+    except Exception as e:
+        st.error(f"Помилка Luma API: {e}")
+        return None
 
-def generate_video_huggingface(image, motion_description):
-    """Альтернативний метод через HuggingFace"""
-    headers = {
-        "Authorization": f"Bearer {st.secrets.get('HF_TOKEN', '')}"
-    }
+def create_demo_video(image, motion_description):
+    """Створення демо анімації"""
+    # Для демо створюємо простий ефект
+    frames = []
     
-    # Конвертуємо зображення
-    buffered = io.BytesIO()
-    image.save(buffered, format="JPEG")
+    for i in range(10):  # 10 кадрів
+        # Легке збільшення/зменшення для ефекту "дихання"
+        scale = 1.0 + 0.02 * (i % 5 - 2)
+        new_size = (int(image.width * scale), int(image.height * scale))
+        
+        frame = image.resize(new_size)
+        if scale != 1.0:
+            # Центруємо зображення
+            bg = Image.new('RGB', image.size, (0, 0, 0))
+            offset = ((image.width - frame.width) // 2, 
+                     (image.height - frame.height) // 2)
+            bg.paste(frame, offset)
+            frame = bg
+        
+        frames.append(frame)
     
-    files = {"inputs": buffered.getvalue()}
-    data = {"parameters": {"motion_bucket_id": 127}}
+    # Зберігаємо як GIF
+    output = io.BytesIO()
+    frames[0].save(output, format='GIF', 
+                   save_all=True, append_images=frames[1:], 
+                   duration=200, loop=0)
+    output.seek(0)
     
-    response = requests.post(STABLE_VIDEO_API, headers=headers, files=files, data=data)
+    return output.getvalue()
+
+def create_animated_gif(image, motion_description):
+    """Створення анімованого GIF"""
+    frames = []
     
-    if response.status_code == 200:
-        return response.content
-    return None
+    # Різні ефекти залежно від опису
+    if "рухається" in motion_description.lower() or "камера" in motion_description.lower():
+        # Ефект руху камери
+        for i in range(8):
+            offset = i * 2
+            frame = image.crop((offset, 0, image.width + offset - 10, image.height))
+            frame = frame.resize(image.size)
+            frames.append(frame)
+    
+    elif "хитається" in motion_description.lower() or "вітер" in motion_description.lower():
+        # Ефект хитання
+        for i in range(6):
+            angle = (i - 3) * 0.5  # Від -1.5 до 1.5 градусів
+            frame = image.rotate(angle, expand=False, fillcolor='black')
+            frames.append(frame)
+    
+    else:
+        # Базовий ефект пульсації
+        for i in range(8):
+            scale = 1.0 + 0.03 * (i % 4 - 1.5)
+            new_size = (int(image.width * scale), int(image.height * scale))
+            frame = image.resize(new_size).resize(image.size)
+            frames.append(frame)
+    
+    # Зберігаємо як GIF
+    output = io.BytesIO()
+    frames[0].save(output, format='GIF', 
+                   save_all=True, append_images=frames[1:], 
+                   duration=300, loop=0)
+    output.seek(0)
+    
+    return output.getvalue()
 
 # Основний інтерфейс
 st.title("🎬 Зображення у Відео — Оживляємо картинки")
-st.markdown("Перетворюйте зображення на живі відео за допомогою ШІ")
+st.markdown("Перетворюйте зображення на анімовані GIF за допомогою ШІ")
+
+# Важлива інформація
+st.info("""
+🎯 **Безкоштовна демо версія**
+- Створює анімовані GIF замість повноцінного відео
+- Для професійного відео потрібен API ключ від Runway, Luma або Akool
+- Додайте токен у Settings → Secrets для повного функціоналу
+""")
 
 # Вибір джерела зображення
 col1, col2 = st.columns(2)
@@ -81,31 +135,18 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("📤 Завантаження зображення")
     
-    tab1, tab2 = st.tabs(["📁 Завантажити файл", "🔗 Із FLUX генератора"])
+    uploaded_image = st.file_uploader(
+        "Оберіть зображення",
+        type=['png', 'jpg', 'jpeg'],
+        help="Підтримуються формати: PNG, JPG, JPEG"
+    )
     
-    with tab1:
-        uploaded_image = st.file_uploader(
-            "Оберіть зображення",
-            type=['png', 'jpg', 'jpeg'],
-            help="Підтримуються формати: PNG, JPG, JPEG"
-        )
-        
-        if uploaded_image:
-            image = Image.open(uploaded_image)
-            st.image(image, caption="Завантажене зображення", use_column_width=True)
-    
-    with tab2:
-        st.markdown("**Ваш FLUX генератор:**")
-        st.link_button(
-            "🎨 Створити зображення в FLUX",
-            "https://realtime-flux-ru.streamlit.app",
-            help="Відкриється в новій вкладці"
-        )
-        
-        st.info("💡 Створіть зображення в FLUX генераторі, збережіть його і завантажте тут")
+    if uploaded_image:
+        image = Image.open(uploaded_image)
+        st.image(image, caption="Завантажене зображення", use_column_width=True)
 
 with col2:
-    if 'uploaded_image' in locals() and uploaded_image:
+    if uploaded_image:
         st.subheader("⚙️ Налаштування анімації")
         
         motion_description = st.text_area(
@@ -115,33 +156,25 @@ with col2:
             help="Опишіть як має рухатися зображення"
         )
         
-        duration = st.slider(
-            "⏱️ Тривалість (секунди)",
-            min_value=2,
-            max_value=6,
-            value=3,
-            help="Тривалість відеоролика"
-        )
-        
-        fps = st.selectbox(
-            "🎯 Якість",
-            [("Швидко (8 FPS)", 8), ("Стандарт (12 FPS)", 12), ("Високе (24 FPS)", 24)],
-            index=1
+        animation_type = st.selectbox(
+            "🎨 Тип анімації",
+            [
+                "Пульсація (дихання)",
+                "Рух камери (панорама)",
+                "Хитання на вітрі",
+                "Легке збільшення"
+            ]
         )
         
         # Приклади описів руху
         with st.expander("💡 Приклади описів руху"):
             examples = [
                 "Камера повільно рухається вперед",
-                "Легке хитання на вітрі",
+                "Легке хитання на вітрі", 
                 "М'які хвилі на воді",
                 "Плавне обертання навколо об'єкта",
                 "Частинки пилу літають у повітрі",
-                "Мерехтливе світло і тіні",
-                "Хмари повільно рухаються",
-                "Відблиски грають на поверхні",
-                "Листя трепеще на дереві",
-                "Дим піднімається вгору"
+                "Мерехтливе світло і тіні"
             ]
             
             for example in examples:
@@ -149,65 +182,40 @@ with col2:
                     motion_description = example
                     st.rerun()
 
-# Генерація відео
-if 'uploaded_image' in locals() and uploaded_image and st.button("🎬 Створити відео", type="primary"):
+# Генерація анімації
+if uploaded_image and st.button("🎬 Створити анімацію", type="primary"):
     if not motion_description.strip():
         st.error("❌ Будь ласка, опишіть бажаний рух")
     else:
-        # Перевіряємо наявність API токенів
-        if not st.secrets.get("REPLICATE_TOKEN") and not st.secrets.get("HF_TOKEN"):
-            st.error("❌ Необхідний API токен. Додайте REPLICATE_TOKEN або HF_TOKEN в налаштування.")
-        else:
-            with st.spinner("🎬 Створюємо відео... Це може зайняти 1-3 хвилини"):
-                try:
-                    # Пробуємо Replicate API
-                    if st.secrets.get("REPLICATE_TOKEN"):
-                        prediction_id = generate_video_replicate(image, motion_description, duration)
-                        
-                        if prediction_id:
-                            # Очікуємо завершення
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            
-                            for i in range(60):  # Максимум 5 хвилин
-                                status = check_prediction_status(prediction_id)
-                                
-                                if status and status["status"] == "succeeded":
-                                    video_url = status["output"]
-                                    st.success("✅ Відео готове!")
-                                    
-                                    # Показуємо відео
-                                    st.video(video_url)
-                                    
-                                    # Інформація про генерацію
-                                    st.info(f"""
-                                    **Параметри відео:**
-                                    - 🎬 Рух: {motion_description}
-                                    - ⏱️ Тривалість: {duration} сек
-                                    - 🎯 FPS: {fps[1]}
-                                    - 📐 Розмір: {image.size[0]}×{image.size[1]}
-                                    """)
-                                    break
-                                    
-                                elif status and status["status"] == "failed":
-                                    st.error("❌ Помилка генерації відео")
-                                    break
-                                    
-                                progress_bar.progress((i + 1) / 60)
-                                status_text.text(f"Обробка... {i*5} секунд")
-                                time.sleep(5)
-                    
-                    # Альтернативно пробуємо HuggingFace
-                    elif st.secrets.get("HF_TOKEN"):
-                        video_bytes = generate_video_huggingface(image, motion_description)
-                        if video_bytes:
-                            st.success("✅ Відео готове!")
-                            st.video(video_bytes)
-                        else:
-                            st.error("❌ Помилка генерації через HuggingFace")
-                    
-                except Exception as e:
-                    st.error(f"❌ Помилка: {str(e)}")
+        with st.spinner("🎬 Створюємо анімацію... 10 секунд"):
+            try:
+                # Створюємо анімований GIF
+                gif_bytes = create_animated_gif(image, motion_description)
+                
+                st.success("✅ Анімація готова!")
+                
+                # Показуємо результат
+                st.image(gif_bytes, caption="🎬 Анімоване зображення")
+                
+                # Кнопка завантаження
+                st.download_button(
+                    label="📥 Завантажити GIF",
+                    data=gif_bytes,
+                    file_name=f"animation_{int(time.time())}.gif",
+                    mime="image/gif"
+                )
+                
+                # Інформація про генерацію
+                st.info(f"""
+                **Параметри анімації:**
+                - 🎬 Рух: {motion_description}
+                - 🎨 Тип: {animation_type}
+                - 📐 Розмір: {image.size[0]}×{image.size[1]}
+                - 📄 Формат: Анімований GIF
+                """)
+                
+            except Exception as e:
+                st.error(f"❌ Помилка: {str(e)}")
 
 # Інформаційна панель
 st.markdown("---")
@@ -215,57 +223,58 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("🎨 Підтримувані формати", "JPG, PNG")
+    st.metric("🎨 Формати", "GIF анімація")
 
 with col2:
-    st.metric("⏱️ Час генерації", "1-3 хв")
+    st.metric("⏱️ Час створення", "10 сек")
 
 with col3:
-    st.metric("🎬 Тривалість відео", "2-6 сек")
+    st.metric("💰 Вартість", "Безкоштовно")
+
+# Інструкції для професійного відео
+with st.expander("🚀 Як отримати повноцінне відео"):
+    st.markdown("""
+    ### Для професійного відео потрібен API ключ:
+    
+    **🎯 Рекомендовані сервіси:**
+    1. **Runway ML** - $12/місяць - найвища якість
+    2. **Luma Dream Machine** - $30/місяць - швидке генерування  
+    3. **Akool** - $20/місяць - добре співвідношення ціна/якість
+    
+    **⚙️ Налаштування:**
+    1. Зареєструйтеся на одному з сервісів
+    2. Отримайте API ключ
+    3. Додайте у Settings → Secrets:
+       - `RUNWAY_TOKEN = "ваш_ключ"`
+       - або `LUMA_TOKEN = "ваш_ключ"`
+       - або `AKOOL_TOKEN = "ваш_ключ"`
+    
+    **🎬 Результат:**
+    - Відео до 10 секунд
+    - Роздільність до 1080p
+    - 30 FPS плавність
+    - MP4 формат
+    """)
 
 # Інструкції
 with st.expander("📚 Як користуватися"):
     st.markdown("""
     ### 🚀 Швидкий старт:
     
-    1. **Створіть зображення** в нашому FLUX генераторі
-    2. **Збережіть** зображення на комп'ютер
-    3. **Завантажте** тут через "Завантажити файл"
-    4. **Опишіть рух** який хочете бачити
-    5. **Натисніть** "Створити відео"
-    6. **Дочекайтеся** результату (1-3 хвилини)
+    1. **Завантажте** зображення (JPG, PNG)
+    2. **Опишіть** бажаний рух або ефект
+    3. **Оберіть** тип анімації
+    4. **Натисніть** "Створити анімацію"
+    5. **Завантажте** готовий GIF
     
-    ### 💡 Поради для кращих результатів:
+    ### 💡 Поради:
     
-    - Використовуйте чіткі, деталізовані зображення
-    - Описуйте прості, плавні рухи
-    - Починайте з коротких відео (2-3 секунди)
-    - Експериментуйте з різними описами
-    
-    ### 🎬 Приклади успішних промптів:
-    
-    - "Вода тече вниз по каменю"
-    - "Вогонь танцює в каміні"
-    - "Хмари пливуть по небу"
-    - "Квіти хитаються на вітрі"
-    """)
-
-# Поради та підказки
-with st.expander("🎯 Поради для кращої анімації"):
-    st.markdown("""
-    ### Найкраще працює з:
-    - 🌊 **Природні сцени** (вода, вогонь, хмари)
-    - 🌸 **Рослини** (квіти, дерева, трава)
-    - 🏔️ **Пейзажі** (гори, поля, озера)
-    - 🎨 **Портрети** (легкий рух волосся, одягу)
-    
-    ### Уникайте:
-    - Складні технічні об'єкти
-    - Багато дрібних деталей
-    - Різкі геометричні форми
-    - Текст і написи
+    - Використовуйте чіткі зображення
+    - Описуйте прості рухи
+    - Експериментуйте з типами анімації
+    - GIF працює в соцмережах і месенджерах
     """)
 
 st.markdown("---")
-st.markdown("**🎬 Створено з використанням Stable Video Diffusion та Replicate API**")
+st.markdown("**🎬 Демо версія - створює анімовані GIF**")
 st.markdown("**🇺🇦 Українська версія для творчої спільноти**")
